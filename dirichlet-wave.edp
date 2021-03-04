@@ -1,0 +1,102 @@
+// Parameters
+real dt = 0.01; // Time step
+real alpha = 1; // Tuning parameter for the feedback
+
+
+
+// Mesh boundary
+border C1(s = 0, 2*pi){x=cos(s); y=sin(s);} // Outer frontier
+border C0(s=0, 2*pi){x=0.50*cos(s); y= -0.50*sin(s);} // Inner frontier
+
+
+// Triangulated domain
+mesh Th = buildmesh(C1(100) + C0(40));
+
+plot(Th, wait=true);
+
+// Finite element space
+fespace Vh(Th, P1);
+Vh u, uu, uuu, u0, v0, v, w, ww;//  Define piecewise-P1 continuous functions
+
+// Solve the finite-dimensional variational problems
+problem dWave (u, v)
+	= int2d(Th)(
+		u*v
+	)
+	+ int2d(Th)(
+		- 2*uu*v + (dt^2)*(dx(uu)*dx(v) + dy(uu)*dy(v))
+	)
+	+ int2d(Th)(
+		+ uuu*v 
+	)
+//	+on(C0, u=0)
+	+ on(C0, u= -atan(alpha*(N.x*dx(w) + N.y*dy(w))))
+	+ on(C1, u=0)
+	;
+
+problem dFeedback(w, v)
+	= int2d(Th)(
+		(dx(w)*dx(v) + dy(w)*dy(v))
+	)
+	+ int2d(Th)(
+		(uu - uuu)*v/dt
+	)
+	+ on(C0, w=0)
+	+ on(C1, w=0)
+	;
+
+problem dWeak(ww, v)
+	= int2d(Th)(
+		(dx(ww)*dx(v) + dy(ww)*dy(v))
+	)
+	+ int2d(Th)(
+		(u - uuu)*v/(2*dt)
+	)
+	+ on(C0, ww=0)
+	+ on(C1, ww=0)
+	;
+
+// Define initial conditions
+u0 = cos(2*pi*dist(x, y)- 0.5*pi)*x*y;
+v0 = 0;
+plot(u0, wait=true, fill=true, dim=3, prev=true, boundary=false);
+
+// Finite difference in time scheme
+real t = dt;
+uuu = u0;
+uu = u0 + dt*v0;
+real Es = 0;
+real Ew = 0;
+
+ofstream ff("Ew.dat");
+
+for (int m = 0; m <= 3/dt; m++){
+	// Solve for the boundary condition and update
+	dFeedback;
+	// Solve the wave
+	dWave;
+	
+	// Compute the energy
+	Es = 0.5*(int2d(Th)(dx(uu)^2 + dy(uu)^2 + ((u - uuu)/(2*dt))^2));
+	dWeak;
+	Ew = 0.5*(int2d(Th)(uu^2 - ww*((u - uuu)/(2*dt))));
+	ff.fixed << Ew;
+	ff << ";" << endl;
+
+
+
+	// Update
+	t = t +dt;
+	uuu = uu;
+	uu = u;
+
+	// Plot
+	plot(u, wait=false, fill=true, dim=3, prev=true, boundary=false);
+	cout << "t=" << t << endl;
+	cout << "Es=" << Es << endl;
+	cout << "Ew=" << Ew << endl;
+}
+
+
+
+
